@@ -318,6 +318,8 @@ contract ShopManager {
         BuyRequests[requestId].accepted = true;
         BuyRequest memory buyRequest = BuyRequests[requestId];
 
+        ShopProduct memory shopProduct = shopProducts[buyRequest.shop].products[buyRequest.productId];
+        shops[buyRequest.shop].allowedToCapture += buyRequest.amount * shopProduct.price;
         userProducts[buyRequest.author].shops[buyRequest.shop].products[buyRequest.productId].amount += buyRequest.amount;
 
         return true;
@@ -350,12 +352,18 @@ contract ShopManager {
 
         uint256 price = shopProducts[buyRequest.shop].products[buyRequest.productId].price;
         require(shops[buyRequest.shop].allowedToCapture >= buyRequest.amount * price, "Shop does not have enough ether for you to refund");
-        shops[shopNamesByAddress[msg.sender]].allowedToCapture -= buyRequest.amount * price;
+        shops[buyRequest.shop].allowedToCapture -= buyRequest.amount * price;
 
         refundRequests[refundRequestIds.length] = RefundRequest(refundRequestIds.length, buyRequestId, msg.sender, false, false, true);
         refundRequestIds.push(refundRequestIds.length);
 
         return true;
+    }
+
+    function test() public view returns(uint256, uint256) {
+        uint256 amount = 5;
+        uint256 price = shopProducts["Moscow"].products[0].price * amount;
+        return (shops["Moscow"].allowedToCapture, price);
     }
 
     // подтверждение заявки на возврат 
@@ -464,11 +472,11 @@ contract ShopManager {
 
         shops["Magadan"] = Shop (
             "Magadan",
-            0x5c6B0f7Bf3E7ce046039Bd8FABdfD3f9F5021678,
+            0x17F6AD8Ef982297579C203069C1DbfFE4348c372,
             0,
             true
         );
-        shopNamesByAddress[0x5c6B0f7Bf3E7ce046039Bd8FABdfD3f9F5021678];
+        shopNamesByAddress[0x17F6AD8Ef982297579C203069C1DbfFE4348c372];
         shopCities.push("Magadan");
     }
 
