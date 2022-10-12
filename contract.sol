@@ -12,8 +12,6 @@ contract ShopManager {
     }
     Role currentRole;
 
-    uint256 productsPrice = 100000000000000;
-
     //Структура магазина в системе
     struct Shop {
         string name;
@@ -22,16 +20,23 @@ contract ShopManager {
         bool exists;
     }
 
-    mapping(string => ShopProducts) shopProductCounts;
+    // маппинг (название магазина => информация о продуктах в магазине)
+    mapping(string => ShopProductList) shopProducts;
     
-    struct ShopProducts {
+    // структура ShopProductList (список продуктов в магазине, их цена и количество):
+    //    string shop - название магазина
+    //    products (id товара => информация о нём) - продукты в этом магазине и информация о них (цена, количество) по ID товара
+    struct ShopProductList {
         string shop;
-        mapping(uint256 => ShopProductCount) products;
+        mapping(uint256 => ShopProduct) products;
     }
 
-    struct ShopProductCount {
+    // структура ShopProduct - информация о товаре в конкретном магазине
+    struct ShopProduct {
         uint256 id;
+        uint256 price;
         uint256 amount;
+        bool exists;
     }
 
     //Структура пользователей в системе
@@ -45,18 +50,26 @@ contract ShopManager {
         bool exists;
     }
 
+    // маппинг (адрес пользователя => продукты которые он купил в разных магазинах)
     mapping(address => UserProducts) userProducts;
 
+    // структура UserProducts
+    //    address user - адрес пользователя
+    //    shops - mapping(название магазина => информация о купленных продуктах)
     struct UserProducts {
         address user;
         mapping(string => UserShopProducts) shops;
     }
 
+    // структура UserShopProducts (информация о купленных продуктах)
+    //    string shop - название магазина
+    //    products - mapping(id товара => информация о купленном продукте)
     struct UserShopProducts {
         string shop;
         mapping(uint256 => UserOwnedProduct) products;
     }
 
+    // структура UserOwnedProduct (информация о купленном пользователем продукте)
     struct UserOwnedProduct {
         uint256 id;
         uint256 amount;
@@ -73,11 +86,8 @@ contract ShopManager {
     //Структура товара
     struct Product {
         uint256 id;
-        address shop;
         string title;
         string description;
-        uint256 amount;
-        uint256 price;
     }
 
     struct BuyRequest {
@@ -115,7 +125,6 @@ contract ShopManager {
 
     //Товары по магазинам
     mapping(uint256 => Product) products;
-    mapping(string => Product) productsDecrip;
     uint256[] productIds;
 
     // Магазины
@@ -255,31 +264,29 @@ contract ShopManager {
         return true;
     }
 
+    // функция создания товара, который потом продавцы смогут добавлять в свой магазин
+    function createProduct(string memory title, string memory description) public onlyOwner {
+        products[productIds.length] = Product(productIds.length, title, description);
+        productIds.push(productIds.length);
+    }
+
     //Функция добавления товара для магазина
     function createProductForShop(
-        address addr,
-        string memory title,
-        string memory description,
+        uint256 productId,
         uint256 amount,
         uint256 price
     ) public onlySeller returns(bool) {
-        products[productIds.length] = Product (
-            productIds.length,
-            addr,
-            title,
-            description,
-            amount,
-            price
+        shopProducts[users[msg.sender].shop].products[productId] = ShopProduct(
+            productId, price, amount, true
         );
-        productIds.push(productIds.length);
 
         return true;
     }
 
     //Функция создания заявки на покупку товара в магазине
-    function buyProduct(string memory shop, address sender, uint256 productId, uint256 amount) public payable returns(bool) {
+    function buyProduct(string memory shop, uint256 productId, uint256 amount) public payable onlyBuyer returns(bool) {
         BuyRequests[buyRequestIds.length] = BuyRequest(
-            sender,
+            msg.sender,
             productId,
             amount,
             shop,
@@ -288,18 +295,21 @@ contract ShopManager {
             true 
         );
 
-        uint256 amountToPay = amount * productsPrice;
+        ShopProduct memory product = shopProducts[shop].products[productId];
+        require(product.exists, "This shop does not have this product");
+
+        uint256 amountToPay = amount * product.price;
         require(msg.value == amountToPay, "You need to send exact amount of ether that is required to buy product");
 
-        require(shopProductCounts[shop].products[productId].amount >= amount, "This shop does not have this item");
-        shopProductCounts[shop].products[productId].amount -= amount;
+        require(shopProducts[shop].products[productId].amount >= amount, "This shop does not have this item");
+        shopProducts[shop].products[productId].amount -= amount;
 
         return true;
     }
 
     //Функция, которая возвращает информацию о товаре 
-    function allInfoProduct(string memory productTitle) public view returns(string memory title, string memory description, uint256 amount, uint256 price) {
-        return (productsDecrip[productTitle].title, productsDecrip[productTitle].description, productsDecrip[productTitle].amount, productsDecrip[productTitle].price);
+    function allInfoProduct(uint256 productId) public view returns(uint256 id, string memory title, string memory description) {
+        return (productId, products[productId].title, products[productId].description);
     }
 
     //Функция, которая подтверждает покупку товара(подтвержает SELLER)
@@ -318,7 +328,7 @@ contract ShopManager {
         BuyRequests[requestId].reviewed = true;
         BuyRequest memory buyRequest = BuyRequests[requestId];
 
-        shopProductCounts[buyRequest.shop].products[buyRequest.productId].amount += buyRequest.amount;
+        shopProducts[buyRequest.shop].products[buyRequest.productId].amount += buyRequest.amount;
 
         return true;
     }
@@ -328,16 +338,19 @@ contract ShopManager {
         BuyRequests[requestId].exists = false;
         BuyRequest memory buyRequest = BuyRequests[requestId];
 
-        shopProductCounts[buyRequest.shop].products[buyRequest.productId].amount += buyRequest.amount;
+        shopProducts[buyRequest.shop].products[buyRequest.productId].amount += buyRequest.amount;
 
         return true;
     }
 
+    // создание заявкки на возврат товара 
     function createRefundRequest(uint256 buyRequestId) public onlyBuyer returns(bool) {
         BuyRequest memory buyRequest = BuyRequests[buyRequestId];
         require(buyRequest.author == msg.sender, "You are not permitted to do this");
-        require(shops[buyRequest.shop].allowedToCapture >= buyRequest.amount * productsPrice, "Shop does not have enough ether for you to refund");
-        shops[shopNamesByAddress[msg.sender]].allowedToCapture -= buyRequest.amount * productsPrice;
+
+        uint256 price = shopProducts[buyRequest.shop].products[buyRequest.productId].price;
+        require(shops[buyRequest.shop].allowedToCapture >= buyRequest.amount * price, "Shop does not have enough ether for you to refund");
+        shops[shopNamesByAddress[msg.sender]].allowedToCapture -= buyRequest.amount * price;
 
         refundRequests[refundRequestIds.length] = RefundRequest(refundRequestIds.length, buyRequestId, msg.sender, false, false, true);
         refundRequestIds.push(refundRequestIds.length);
@@ -345,21 +358,26 @@ contract ShopManager {
         return true;
     }
 
+    // подтверждение заявки на возврат 
     function acceptRefundRequest(uint256 refundRequestId) public onlySeller returns(bool) {
         refundRequests[refundRequestId].accepted = true;
         refundRequests[refundRequestId].reviewed = true;
 
         BuyRequest memory buyRequest = BuyRequests[refundRequests[refundRequestId].buyRequestId];
-        payable(refundRequests[refundRequestId].author).transfer(buyRequest.amount * productsPrice);
+        uint256 price = shopProducts[buyRequest.shop].products[buyRequest.productId].price;
+        payable(refundRequests[refundRequestId].author).transfer(buyRequest.amount * price);
 
         return true;
     }
 
+    // отклонение заявки на возврат 
     function denyRefundRequest(uint256 refundRequestId) public onlySeller returns(bool) {
         refundRequests[refundRequestId].reviewed = true;
         
         BuyRequest memory buyRequest = BuyRequests[refundRequests[refundRequestId].buyRequestId];
-        shops[buyRequest.shop].allowedToCapture += buyRequest.amount * productsPrice;
+
+        uint256 price = shopProducts[buyRequest.shop].products[buyRequest.productId].price;
+        shops[buyRequest.shop].allowedToCapture += buyRequest.amount * price;
         return true;
     }
 
@@ -368,9 +386,11 @@ contract ShopManager {
         refundRequests[refundRequestId].exists = false;
 
         BuyRequest memory buyRequest = BuyRequests[refundRequests[refundRequestId].buyRequestId];
-        shops[buyRequest.shop].allowedToCapture += buyRequest.amount * productsPrice;
+        uint256 price = shopProducts[buyRequest.shop].products[buyRequest.productId].price;
+        shops[buyRequest.shop].allowedToCapture += buyRequest.amount * price;
     }
 
+    // получение денег магазина с резервного счета 
     function capture(uint256 amount) public onlyShopOwner {
         require(shops[shopNamesByAddress[msg.sender]].allowedToCapture >= amount, "You can't capture more than its allowed for you to capture");
 
@@ -393,7 +413,7 @@ contract ShopManager {
 
         users[0xAb8483F64d9C6d1EcF9b849Ae677dD3315835cb2] = User (
             "Seller",
-            "TSUM",
+            "Moscow",
             0x1841d653f9c4edda9d66a7e7737b39763d6bd40f569a3ec6859d3305b72310e6,
             0x64e604787cbf194841e7b68d7cd28786f6c9a0a3ab9f8b0a0e87cb4387ab0107,
             Role.SELLER,
@@ -416,7 +436,7 @@ contract ShopManager {
         userLoginsArray.push("Buyer");
 
         shops["Moscow"] = Shop (
-            "TSUM",
+            "Moscow",
             0x78731D3Ca6b7E34aC0F824c42a7cC18A495cabaB,
             0,
             true
@@ -425,7 +445,7 @@ contract ShopManager {
         shopCities.push("Moscow");
 
         shops["SPb"] = Shop (
-            "ohMyVape",
+            "SPb",
             0x617F2E2fD72FD9D5503197092aC168c91465E7f2,
             0,
             true
@@ -434,7 +454,7 @@ contract ShopManager {
         shopCities.push("SPb");
 
         shops["Tgn"] = Shop (
-            "Zvezdnii TGN",
+            "Tgn",
             0x17F6AD8Ef982297579C203069C1DbfFE4348c372,
             0,
             true
@@ -443,7 +463,7 @@ contract ShopManager {
         shopCities.push("Tgn");
 
         shops["Magadan"] = Shop (
-            "Stvoli v Magadane",
+            "Magadan",
             0x5c6B0f7Bf3E7ce046039Bd8FABdfD3f9F5021678,
             0,
             true
