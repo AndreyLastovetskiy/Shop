@@ -1,0 +1,19 @@
+body, * {
+    background-color:transparent;
+    margin: 10px;
+}
+
+/*0000000000000000000000000000000000000*/
+.form__btn {
+    width: 100px;
+}
+.create__products__btn {
+    width: 100px;
+}
+.add__product__btn {
+    width: 100px;
+}
+.buy__request__btn {
+    width: 100px;
+}
+/*0000000000000000000000000000000000000*/
