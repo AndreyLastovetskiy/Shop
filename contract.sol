@@ -90,6 +90,7 @@ contract ShopManager {
         string description;
     }
 
+    //Структура заявки на покупку продукта
     struct BuyRequest {
         address author;
         uint256 productId;
@@ -100,6 +101,7 @@ contract ShopManager {
         bool exists;
     }
 
+    //Структура для возврата продукта
     struct RefundRequest {
         uint256 id;
         uint256 buyRequestId;
@@ -206,14 +208,32 @@ contract ShopManager {
         return true;
     }
 
-    //Функция подтверждения заявки на повышение роли 
-    function approveElevateRequest(address requestAuthor, bool accept) public onlyOwner {
-        elevReqs[requestAuthor].exists = false;
-        if(!accept) return;
+    //Функция запроса на смену роли
+    function newElevateRequest(Role requiredRole, string memory requiredShop) public onlySellerAndBuyer returns(bool) {
+        require(!elevReqs[msg.sender].exists, "You have already sent an elevate request!");
+
+        elevReqs[msg.sender] = ElevateRequest(
+            msg.sender,
+            requiredRole,
+            requiredShop,
+            true
+        );
+        elevReqsArray.push(msg.sender);
+
+        return true;
     }
 
-    //Функция отмены запроса на смену роли
-    function cancelElevationRequest() public onlyOwner {
+    //Вывод запросов на смену роли 
+    function getElevateRequest(address sender) public view onlyOwner returns ( bool exists, Role requiredRole, string memory requiredShop) {
+        return (
+            elevReqs[sender].exists,
+            elevReqs[sender].role,
+            elevReqs[sender].shop
+        );
+    }
+
+    // Функция отмены запроса на смену роли
+    function cancelElevationRequest() public onlySellerAndBuyer {
         require(
             elevReqs[msg.sender].exists,
             "You have not sent any elevate requests!"
@@ -224,6 +244,38 @@ contract ShopManager {
             if (elevReqsArray[i] == msg.sender) {
                 delete elevReqsArray[i];
             }
+        }
+    }
+
+    // Подтвердить запрос на смену роли
+    function approveElevationRequest(address requestAuthor, bool accept) public onlyOwner {
+        ElevateRequest memory elevReq = elevReqs[requestAuthor];
+
+        elevReqs[requestAuthor].exists = false;
+        if(!accept) return;
+
+        for(uint i = 0; i < elevReqsArray.length; i+=1) {
+            if(elevReqsArray[i] == requestAuthor) {
+                delete elevReqsArray[i];
+                break;
+            }
+        }
+
+        this.changeRole(requestAuthor, elevReq.role, elevReq.shop, true);
+    }
+
+    // Сменить роль пользователя
+    function changeRole(
+        address user,
+        Role requiredRole,
+        string memory requiredShop,
+        bool maxRole
+    ) public {
+        users[user].currentRole = requiredRole;
+        if (maxRole && users[msg.sender].currentRole == Role.OWNER) {
+            users[user].currentRole = requiredRole;
+            users[user].maxRole = requiredRole;
+            users[user].shop = requiredShop;
         }
     }
 
@@ -247,21 +299,6 @@ contract ShopManager {
             Role.OWNER,
             true
         );
-    }
-
-    //Функция запроса на смену роли
-    function newElevateRequest(Role requiredRole, string memory requiredShop) public onlySellerAndBuyer returns(bool) {
-        require(!elevReqs[msg.sender].exists, "You have already sent an elevate request!");
-
-        elevReqs[msg.sender] = ElevateRequest(
-            msg.sender,
-            requiredRole,
-            requiredShop,
-            true
-        );
-        elevReqsArray.push(msg.sender);
-
-        return true;
     }
 
     // функция создания товара, который потом продавцы смогут добавлять в свой магазин
@@ -406,8 +443,13 @@ contract ShopManager {
         payable(msg.sender).transfer(amount);
     }
 
+    //Функция берет адрес пользователя
+    function getUserAddress(string memory username) public view returns (address) {
+        return userLogins[username];
+    }
+
     constructor() {
-        users[0x5B38Da6a701c568545dCfcB03FcB875f56beddC4] = User (
+        users[0xEc7Ea38b4e06BbFC230BCB018f9a2bd166f8b87f] = User (
             "Owner",
             "",
             0x1841d653f9c4edda9d66a7e7737b39763d6bd40f569a3ec6859d3305b72310e6,
@@ -416,10 +458,10 @@ contract ShopManager {
             Role.OWNER,
             true
         );
-        userLogins["Owner"] = 0x5B38Da6a701c568545dCfcB03FcB875f56beddC4;
+        userLogins["Owner"] = 0xEc7Ea38b4e06BbFC230BCB018f9a2bd166f8b87f;
         userLoginsArray.push("Owner");
 
-        users[0xAb8483F64d9C6d1EcF9b849Ae677dD3315835cb2] = User (
+        users[0xdACC5aDf706e5B21d1D4201DC38d95D5cFce79E9] = User (
             "Seller",
             "Moscow",
             0x1841d653f9c4edda9d66a7e7737b39763d6bd40f569a3ec6859d3305b72310e6,
@@ -428,10 +470,10 @@ contract ShopManager {
             Role.SELLER,
             true
         );
-        userLogins["Seller"] = 0xAb8483F64d9C6d1EcF9b849Ae677dD3315835cb2;
+        userLogins["Seller"] = 0xdACC5aDf706e5B21d1D4201DC38d95D5cFce79E9;
         userLoginsArray.push("Seller");
 
-        users[0x4B20993Bc481177ec7E8f571ceCaE8A9e22C02db] = User (
+        users[0x241668911D8f98C72854659868CEb75a690abdf8] = User (
             "Buyer",
             "",
             0x1841d653f9c4edda9d66a7e7737b39763d6bd40f569a3ec6859d3305b72310e6,
@@ -440,43 +482,43 @@ contract ShopManager {
             Role.BUYER,
             true
         );
-        userLogins["Buyer"] = 0x4B20993Bc481177ec7E8f571ceCaE8A9e22C02db;
+        userLogins["Buyer"] = 0x241668911D8f98C72854659868CEb75a690abdf8;
         userLoginsArray.push("Buyer");
 
         shops["Moscow"] = Shop (
             "Moscow",
-            0x78731D3Ca6b7E34aC0F824c42a7cC18A495cabaB,
+            0xd91d32294b320e40656Aaa443F61aC4C6a110D78,
             0,
             true
         );
-        shopNamesByAddress[0x78731D3Ca6b7E34aC0F824c42a7cC18A495cabaB];
+        shopNamesByAddress[0xd91d32294b320e40656Aaa443F61aC4C6a110D78];
         shopCities.push("Moscow");
 
         shops["SPb"] = Shop (
             "SPb",
-            0x617F2E2fD72FD9D5503197092aC168c91465E7f2,
+            0x67bC17D1d9e58202e9541b73bC79e615063FF7C2,
             0,
             true
         );
-        shopNamesByAddress[0x617F2E2fD72FD9D5503197092aC168c91465E7f2];
+        shopNamesByAddress[0x67bC17D1d9e58202e9541b73bC79e615063FF7C2];
         shopCities.push("SPb");
 
         shops["Tgn"] = Shop (
             "Tgn",
-            0x17F6AD8Ef982297579C203069C1DbfFE4348c372,
+            0xC7C69B0959238327a79199e092cff1Dfe8b71f3c,
             0,
             true
         );
-        shopNamesByAddress[0x17F6AD8Ef982297579C203069C1DbfFE4348c372];
+        shopNamesByAddress[0xC7C69B0959238327a79199e092cff1Dfe8b71f3c];
         shopCities.push("Tgn");
 
         shops["Magadan"] = Shop (
             "Magadan",
-            0x17F6AD8Ef982297579C203069C1DbfFE4348c372,
+            0xAd8279FF9B8160C606fD1BEA5A7a40522bAB91B5,
             0,
             true
         );
-        shopNamesByAddress[0x17F6AD8Ef982297579C203069C1DbfFE4348c372];
+        shopNamesByAddress[0xAd8279FF9B8160C606fD1BEA5A7a40522bAB91B5];
         shopCities.push("Magadan");
     }
 
